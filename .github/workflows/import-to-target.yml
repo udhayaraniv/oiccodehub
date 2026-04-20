@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       archive_name:
-        description: "Archive file name already present in exports/"
+        description: "Archive file name already present under exports/"
         required: true
         default: "project-export.car"
 
@@ -17,11 +17,31 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Validate target configuration
+        run: |
+          echo "Validating required secrets and inputs..."
+          test -n "${{ secrets.TGT_TOKEN_URL }}"
+          test -n "${{ secrets.TGT_CLIENT_ID }}"
+          test -n "${{ secrets.TGT_CLIENT_SECRET }}"
+          test -n "${{ secrets.TGT_SCOPE }}"
+          test -n "${{ secrets.TGT_OIC_BASE_URL }}"
+          test -n "${{ secrets.TGT_OIC_INSTANCE }}"
+          test -n "${{ github.event.inputs.archive_name }}"
+
+          echo "Token URL host:"
+          echo "${{ secrets.TGT_TOKEN_URL }}" | sed 's#https://##' | cut -d/ -f1
+
+          echo "OIC base URL host:"
+          echo "${{ secrets.TGT_OIC_BASE_URL }}" | sed 's#https://##' | cut -d/ -f1
 
       - name: Validate archive exists
         run: |
           test -f "exports/${{ github.event.inputs.archive_name }}"
+          ls -lh "exports/${{ github.event.inputs.archive_name }}"
 
       - name: Get target access token
         id: token
@@ -30,7 +50,8 @@ jobs:
           TOKEN=$(scripts/get_token.sh \
             "${{ secrets.TGT_TOKEN_URL }}" \
             "${{ secrets.TGT_CLIENT_ID }}" \
-            "${{ secrets.TGT_CLIENT_SECRET }}")
+            "${{ secrets.TGT_CLIENT_SECRET }}" \
+            "${{ secrets.TGT_SCOPE }}")
           echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
 
       - name: Import project into target OIC3
