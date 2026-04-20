@@ -1,0 +1,43 @@
+name: Import OIC3 project to target
+
+on:
+  workflow_dispatch:
+    inputs:
+      archive_name:
+        description: "Archive file name already present in exports/"
+        required: true
+        default: "project-export.car"
+
+jobs:
+  import-project:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Validate archive exists
+        run: |
+          test -f "exports/${{ github.event.inputs.archive_name }}"
+
+      - name: Get target access token
+        id: token
+        run: |
+          chmod +x scripts/get_token.sh
+          TOKEN=$(scripts/get_token.sh \
+            "${{ secrets.TGT_TOKEN_URL }}" \
+            "${{ secrets.TGT_CLIENT_ID }}" \
+            "${{ secrets.TGT_CLIENT_SECRET }}")
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Import project into target OIC3
+        run: |
+          chmod +x scripts/import_project.sh
+          scripts/import_project.sh \
+            "${{ secrets.TGT_OIC_BASE_URL }}" \
+            "${{ secrets.TGT_OIC_INSTANCE }}" \
+            "${{ steps.token.outputs.token }}" \
+            "exports/${{ github.event.inputs.archive_name }}"
