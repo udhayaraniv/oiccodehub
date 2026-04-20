@@ -1,0 +1,65 @@
+name: Export OIC3 project from source
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_id:
+        description: "Source Oracle Integration project identifier"
+        required: true
+      project_label:
+        description: "Optional deployment label/version (example: 01.00.0000)"
+        required: false
+      archive_name:
+        description: "Archive file name"
+        required: true
+        default: "project-export.car"
+
+permissions:
+  contents: write
+
+jobs:
+  export-project:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Get source access token
+        id: token
+        run: |
+          chmod +x scripts/get_token.sh
+          TOKEN=$(scripts/get_token.sh \
+            "${{ secrets.SRC_TOKEN_URL }}" \
+            "${{ secrets.SRC_CLIENT_ID }}" \
+            "${{ secrets.SRC_CLIENT_SECRET }}")
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Export project from source OIC3
+        run: |
+          mkdir -p exports
+          chmod +x scripts/export_project.sh
+          scripts/export_project.sh \
+            "${{ secrets.SRC_OIC_BASE_URL }}" \
+            "${{ secrets.SRC_OIC_INSTANCE }}" \
+            "${{ steps.token.outputs.token }}" \
+            "${{ github.event.inputs.project_id }}" \
+            "${{ github.event.inputs.project_label }}" \
+            "exports/${{ github.event.inputs.archive_name }}"
+
+      - name: Commit exported archive
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add exports/${{ github.event.inputs.archive_name }}
+          git commit -m "Export OIC3 project ${{ github.event.inputs.project_id }}" || echo "No changes to commit"
+          git push
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: exported-car
+          path: exports/${{ github.event.inputs.archive_name }}
