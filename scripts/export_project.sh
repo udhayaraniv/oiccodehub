@@ -21,13 +21,7 @@ echo "URL: ${URL}"
 
 if [ -n "${PROJECT_LABEL}" ]; then
   cat > "${TMP_JSON}" <<EOF
-{
-  "name": "${PROJECT_ID}",
-  "code": "${PROJECT_ID}",
-  "type": "DEVELOPED",
-  "builtBy": "",
-  "label": "${PROJECT_LABEL}"
-}
+{"name":"${PROJECT_ID}","code":"${PROJECT_ID}","type":"DEVELOPED","builtBy":"","label":"${PROJECT_LABEL}"}
 EOF
 
   HTTP_CODE="$(curl -sS \
@@ -36,7 +30,6 @@ EOF
     -w "%{http_code}" \
     -X POST \
     -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-    -H "Accept: application/octet-stream" \
     -H "Content-Type: application/json" \
     --data @"${TMP_JSON}" \
     "${URL}")"
@@ -47,7 +40,8 @@ else
     -w "%{http_code}" \
     -X POST \
     -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-    -H "Accept: application/octet-stream" \
+    -H "Content-Type: application/json" \
+    --data '{}' \
     "${URL}")"
 fi
 
