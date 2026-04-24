@@ -1,0 +1,128 @@
+name: Export and Import OIC3 project
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_id:
+        description: "Source Oracle Integration project identifier"
+        required: true
+      project_label:
+        description: "Optional deployment label/version, for example 01.00.0000"
+        required: false
+        default: ""
+      archive_name:
+        description: "Archive file name to create under exports/"
+        required: true
+        default: "project-export.car"
+
+permissions:
+  contents: write
+
+jobs:
+  export-and-import:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Validate source configuration
+        run: |
+          echo "Validating source secrets and inputs..."
+          test -n "${{ secrets.SRC_TOKEN_URL }}"
+          test -n "${{ secrets.SRC_CLIENT_ID }}"
+          test -n "${{ secrets.SRC_CLIENT_SECRET }}"
+          test -n "${{ secrets.SRC_SCOPE }}"
+          test -n "${{ secrets.SRC_OIC_BASE_URL }}"
+          test -n "${{ secrets.SRC_OIC_INSTANCE }}"
+          test -n "${{ github.event.inputs.project_id }}"
+          test -n "${{ github.event.inputs.archive_name }}"
+
+          echo "Source token URL host:"
+          echo "${{ secrets.SRC_TOKEN_URL }}" | sed 's#https://##' | cut -d/ -f1
+
+          echo "Source OIC base URL host:"
+          echo "${{ secrets.SRC_OIC_BASE_URL }}" | sed 's#https://##' | cut -d/ -f1
+
+      - name: Validate target configuration
+        run: |
+          echo "Validating target secrets..."
+          test -n "${{ secrets.TGT_TOKEN_URL }}"
+          test -n "${{ secrets.TGT_CLIENT_ID }}"
+          test -n "${{ secrets.TGT_CLIENT_SECRET }}"
+          test -n "${{ secrets.TGT_SCOPE }}"
+          test -n "${{ secrets.TGT_OIC_BASE_URL }}"
+          test -n "${{ secrets.TGT_OIC_INSTANCE }}"
+
+          echo "Target token URL host:"
+          echo "${{ secrets.TGT_TOKEN_URL }}" | sed 's#https://##' | cut -d/ -f1
+
+          echo "Target OIC base URL host:"
+          echo "${{ secrets.TGT_OIC_BASE_URL }}" | sed 's#https://##' | cut -d/ -f1
+
+      - name: Get source access token
+        id: src_token
+        run: |
+          chmod +x scripts/get_token.sh
+          TOKEN=$(bash scripts/get_token.sh \
+            "${{ secrets.SRC_TOKEN_URL }}" \
+            "${{ secrets.SRC_CLIENT_ID }}" \
+            "${{ secrets.SRC_CLIENT_SECRET }}" \
+            "${{ secrets.SRC_SCOPE }}")
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Export project from source OIC3
+        run: |
+          mkdir -p exports
+          chmod +x scripts/export_project.sh
+          bash scripts/export_project.sh \
+            "${{ secrets.SRC_OIC_BASE_URL }}" \
+            "${{ secrets.SRC_OIC_INSTANCE }}" \
+            "${{ steps.src_token.outputs.token }}" \
+            "${{ github.event.inputs.project_id }}" \
+            "${{ github.event.inputs.project_label }}" \
+            "exports/${{ github.event.inputs.archive_name }}"
+
+      - name: Verify exported archive
+        run: |
+          test -f "exports/${{ github.event.inputs.archive_name }}"
+          ls -lh "exports/${{ github.event.inputs.archive_name }}"
+
+      - name: Commit exported archive
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add "exports/${{ github.event.inputs.archive_name }}"
+          git commit -m "Export OIC3 project ${{ github.event.inputs.project_id }}" || echo "No changes to commit"
+          git push
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: exported-car
+          path: exports/${{ github.event.inputs.archive_name }}
+
+      - name: Get target access token
+        id: tgt_token
+        run: |
+          chmod +x scripts/get_token.sh
+          TOKEN=$(bash scripts/get_token.sh \
+            "${{ secrets.TGT_TOKEN_URL }}" \
+            "${{ secrets.TGT_CLIENT_ID }}" \
+            "${{ secrets.TGT_CLIENT_SECRET }}" \
+            "${{ secrets.TGT_SCOPE }}")
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Import project into target OIC3
+        run: |
+          chmod +x scripts/import_project.sh
+          bash scripts/import_project.sh \
+            "${{ secrets.TGT_OIC_BASE_URL }}" \
+            "${{ secrets.TGT_OIC_INSTANCE }}" \
+            "${{ steps.tgt_token.outputs.token }}" \
+            "exports/${{ github.event.inputs.archive_name }}"
